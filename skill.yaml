@@ -1,0 +1,191 @@
+# OpenPAVE Cloudflare Skill
+# Deploy and manage Cloudflare Workers, Pages, and AI Workers
+
+name: cloudflare
+version: 1.0.0
+description: Deploy and manage Cloudflare Workers, Pages, and AI Workers
+
+author:
+  name: cnrai
+  url: https://github.com/cnrai
+
+license: MIT
+homepage: https://github.com/cnrai/openpave-cloudflare
+repository: cnrai/openpave-cloudflare
+
+# Execution pattern
+pattern: sandbox
+entrypoint: index.js
+
+# Available commands
+commands:
+  # Account
+  - name: account
+    description: Show Cloudflare account info
+    options:
+      - --summary
+      - --json
+
+  # Workers - Phase 1
+  - name: workers-list
+    description: List Workers scripts
+    options:
+      - --summary
+      - --json
+
+  - name: workers-get
+    description: Get Worker script details
+    args:
+      - <name>
+    options:
+      - --summary
+      - --json
+
+  - name: workers-deploy
+    description: Deploy a Worker script from file
+    args:
+      - <name>
+    options:
+      - -i, --input <file>
+      - --compatibility-date <date>
+      - --summary
+      - --json
+
+  - name: workers-delete
+    description: Delete a Worker script
+    args:
+      - <name>
+    options:
+      - --force
+      - --summary
+      - --json
+
+  - name: workers-tail
+    description: Get recent Worker logs/events
+    args:
+      - <name>
+    options:
+      - --summary
+      - --json
+
+  - name: workers-subdomain
+    description: Get or set Workers subdomain
+    options:
+      - --summary
+      - --json
+
+  # Pages - Phase 2
+  - name: pages-list
+    description: List Pages projects
+    options:
+      - --summary
+      - --json
+
+  - name: pages-get
+    description: Get Pages project details
+    args:
+      - <name>
+    options:
+      - --summary
+      - --json
+
+  - name: pages-create
+    description: Create a new Pages project
+    args:
+      - <name>
+    options:
+      - --production-branch <branch>
+      - --summary
+      - --json
+
+  - name: pages-deploy
+    description: Deploy to a Pages project
+    args:
+      - <name>
+    options:
+      - -d, --directory <dir>
+      - --branch <branch>
+      - --summary
+      - --json
+
+  - name: pages-deployments
+    description: List deployments for a Pages project
+    args:
+      - <name>
+    options:
+      - --summary
+      - --json
+
+  # AI - Phase 3
+  - name: ai-models
+    description: List available AI models
+    options:
+      - -s, --search <query>
+      - --task <task>
+      - --summary
+      - --json
+
+  - name: ai-run
+    description: Run an AI model
+    args:
+      - <model>
+    options:
+      - -p, --prompt <text>
+      - --input <file>
+      - --summary
+      - --json
+
+# Token configuration for secure sandbox access
+tokens:
+  cloudflare:
+    type: api_key
+    description: Cloudflare API token for account access
+    domains:
+      - api.cloudflare.com
+    env:
+      required:
+        - CLOUDFLARE_API_TOKEN
+        - CLOUDFLARE_ACCOUNT_ID
+    config:
+      env: CLOUDFLARE_API_TOKEN
+      type: api_key
+      domains:
+        - api.cloudflare.com
+      placement:
+        type: header
+        name: Authorization
+        format: "Bearer {token}"
+
+# Sandbox permissions
+permissions:
+  fs.read:
+    - "*"  # Needed for reading project files to deploy
+  fs.write: []
+  network:
+    - api.cloudflare.com
+  modules:
+    - fs
+    - path
+  system: []
+
+# Platform compatibility
+platforms:
+  - darwin
+  - linux
+  - win32
+
+engines:
+  node: ">=16.0.0"
+
+# Metadata
+keywords:
+  - cloudflare
+  - workers
+  - pages
+  - deployment
+  - serverless
+  - ai
+  - edge
+
+category: deployment
+icon: "\u2601\uFE0F"
