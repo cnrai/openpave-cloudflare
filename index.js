@@ -28,6 +28,129 @@ var path = require('path');
 // Parse command line arguments
 var args = process.argv.slice(2);
 
+// ── PAVE Auth Proxy (replaces deprecated authenticatedFetch global) ──
+// Direct HTTP calls to the PAVE auth proxy at /proxy/:tokenName/*path
+var PAVE_PROXY_BASE = process.env.PAVE_PROXY_URL || '';
+
+function _shellQuote(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+function proxyHasToken(tokenName) {
+  if (!PAVE_PROXY_BASE) return false;
+  try {
+    var url = PAVE_PROXY_BASE.replace(/\/$/, '') + '/_tokens/' + encodeURIComponent(tokenName);
+    var out = require('child_process').execSync(
+      'curl -sS --max-time 5 ' + _shellQuote(url),
+      { encoding: 'utf8', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    var r = JSON.parse(out);
+    return r.has === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function proxyFetch(tokenName, url, options) {
+  options = options || {};
+  if (!PAVE_PROXY_BASE) {
+    throw new Error('PAVE_PROXY_URL not set - cannot reach auth proxy');
+  }
+
+  // Build proxy URL: strip origin from upstream URL, prepend proxy base
+  var parsed = new URL(url);
+  var proxyUrl = PAVE_PROXY_BASE.replace(/\/$/, '') + '/' + encodeURIComponent(tokenName) + parsed.pathname + parsed.search;
+
+  // _mode=json: proxy returns { ok, status, headers, body } for sync parsing
+  proxyUrl += (proxyUrl.indexOf('?') !== -1 ? '&' : '?') + '_mode=json';
+
+  // _saveTo: binary-safe file download (proxy writes response to file)
+  if (options.saveTo) {
+    proxyUrl += '&_saveTo=' + encodeURIComponent(options.saveTo);
+  }
+
+  // Build curl command for synchronous HTTP
+  var method = options.method || 'GET';
+  var timeout = options.timeout || 30000;
+  var cmd = 'curl -sS -X ' + method + ' --max-time ' + Math.ceil(timeout / 1000);
+
+  var headers = Object.assign({}, options.headers || {});
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  for (var k in headers) {
+    cmd += ' -H ' + _shellQuote(k + ': ' + headers[k]);
+  }
+
+  if (options.body) {
+    var bodyStr = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+    cmd += ' -d ' + _shellQuote(bodyStr);
+  }
+
+  cmd += ' ' + _shellQuote(proxyUrl);
+
+  // Execute synchronously
+  var out;
+  try {
+    out = require('child_process').execSync(cmd, {
+      encoding: 'utf8',
+      timeout: timeout + 5000,
+      maxBuffer: 10 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+  } catch (err) {
+    var stdout = err.stdout ? err.stdout.toString() : '';
+    var stderr = err.stderr ? err.stderr.toString() : '';
+    if (stdout) {
+      out = stdout;
+    } else {
+      throw new Error('Proxy request failed: ' + (stderr.trim() || err.message));
+    }
+  }
+
+  // Parse _mode=json response
+  var resp;
+  try {
+    resp = JSON.parse(out);
+  } catch (e) {
+    return {
+      ok: true, status: 200,
+      headers: { get: function() { return null; } },
+      text: function() { return out; },
+      json: function() { return JSON.parse(out || '{}'); }
+    };
+  }
+
+  if (resp.error) throw new Error(resp.error);
+
+  // saveTo response: { ok, status, savedTo, size }
+  if (resp.savedTo) {
+    return {
+      ok: resp.ok || false, status: resp.status || 200, savedTo: resp.savedTo,
+      headers: { get: function() { return null; } },
+      text: function() { return ''; },
+      json: function() { return {}; }
+    };
+  }
+
+  // Normal response: { ok, status, headers, body }
+  return {
+    ok: resp.ok || false, status: resp.status || 200,
+    headers: {
+      get: function(name) {
+        var hs = resp.headers || {};
+        var ln = name.toLowerCase();
+        for (var key in hs) {
+          if (key.toLowerCase() === ln) return Array.isArray(hs[key]) ? hs[key][0] : hs[key];
+        }
+        return null;
+      }
+    },
+    text: function() { return resp.body || ''; },
+    json: function() { return JSON.parse(resp.body || '{}'); }
+  };
+}
+
 function parseArgs() {
   var parsed = {
     command: null,
@@ -85,13 +208,8 @@ function CloudflareClient() {
 CloudflareClient.prototype.checkTokens = function() {
   if (this.tokenChecked) return;
 
-  // Check if secure token functions are available
-  if (typeof hasToken !== 'function' || typeof authenticatedFetch !== 'function') {
-    throw new Error('Secure token system not available. Make sure you are running this via: pave run cloudflare');
-  }
-
   // Check if cloudflare token is configured
-  if (!hasToken('cloudflare')) {
+  if (!proxyHasToken('cloudflare')) {
     console.error('Cloudflare token not configured.');
     console.error('');
     console.error('Add to ~/.pave/permissions.yaml:');
@@ -104,7 +222,7 @@ CloudflareClient.prototype.checkTokens = function() {
           placement: { type: 'header', name: 'Authorization', format: 'Bearer {token}' }
         }
       }
-    }, null, 2));
+    }));
     console.error('');
     console.error('Then set environment variables:');
     console.error('  CLOUDFLARE_API_TOKEN=your_api_token');
@@ -136,7 +254,7 @@ CloudflareClient.prototype.request = function(endpoint, options) {
   var url = this.baseUrl + endpoint;
 
   try {
-    var response = authenticatedFetch('cloudflare', url, {
+    var response = proxyFetch('cloudflare', url, {
       method: options.method || 'GET',
       headers: {
         'Accept': 'application/json',
@@ -196,7 +314,7 @@ function truncate(str, max) {
 }
 
 function outputJson(data) {
-  console.log(JSON.stringify(data, null, 2));
+  console.log(JSON.stringify(data));
 }
 
 
@@ -207,7 +325,7 @@ function outputJson(data) {
 function cmdAccount(client, opts) {
   var data = client.request('/accounts');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -256,7 +374,7 @@ function cmdAccount(client, opts) {
 function cmdWorkersList(client, opts) {
   var data = client.accountRequest('/workers/scripts');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -301,7 +419,7 @@ function cmdWorkersGet(client, opts, name) {
 
   var data = client.accountRequest('/workers/scripts/' + name + '/settings');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -395,7 +513,7 @@ function cmdWorkersDeploy(client, opts, name) {
     });
   }
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -441,7 +559,7 @@ function cmdWorkersDelete(client, opts, name) {
     method: 'DELETE'
   });
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -473,7 +591,7 @@ function cmdWorkersTail(client, opts, name) {
     body: JSON.stringify({})
   });
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -500,7 +618,7 @@ function cmdWorkersTail(client, opts, name) {
 function cmdWorkersSubdomain(client, opts) {
   var data = client.accountRequest('/workers/subdomain');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -523,7 +641,7 @@ function cmdWorkersSubdomain(client, opts) {
 function cmdPagesList(client, opts) {
   var data = client.accountRequest('/pages/projects');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -567,7 +685,7 @@ function cmdPagesGet(client, opts, name) {
 
   var data = client.accountRequest('/pages/projects/' + name);
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -639,7 +757,7 @@ function cmdPagesCreate(client, opts, name) {
     body: JSON.stringify(body)
   });
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -715,7 +833,7 @@ function cmdPagesDeploy(client, opts, name) {
     })
   });
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(uploadData);
     return;
   }
@@ -753,7 +871,7 @@ function cmdPagesDeployments(client, opts, name) {
 
   var data = client.accountRequest('/pages/projects/' + name + '/deployments');
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -803,7 +921,7 @@ function cmdAiModels(client, opts) {
 
   var data = client.accountRequest('/ai/models/search' + query);
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -868,7 +986,7 @@ function cmdAiRun(client, opts, model) {
     timeout: 60000
   });
 
-  if (opts.json) {
+  if (!opts.summary) {
     outputJson(data);
     return;
   }
@@ -880,7 +998,7 @@ function cmdAiRun(client, opts, model) {
     } else if (typeof result === 'string') {
       console.log(result);
     } else {
-      console.log(JSON.stringify(result, null, 2));
+      console.log(JSON.stringify(result));
     }
   } else {
     console.error('No result from AI model.');

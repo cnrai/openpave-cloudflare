@@ -2,7 +2,7 @@
 # Deploy and manage Cloudflare Workers, Pages, and AI Workers
 
 name: cloudflare
-version: 1.0.0
+version: 1.1.0
 description: Deploy and manage Cloudflare Workers, Pages, and AI Workers
 
 author:
@@ -24,14 +24,12 @@ commands:
     description: Show Cloudflare account info
     options:
       - --summary
-      - --json
 
   # Workers - Phase 1
   - name: workers-list
     description: List Workers scripts
     options:
       - --summary
-      - --json
 
   - name: workers-get
     description: Get Worker script details
@@ -39,7 +37,6 @@ commands:
       - <name>
     options:
       - --summary
-      - --json
 
   - name: workers-deploy
     description: Deploy a Worker script from file
@@ -49,7 +46,6 @@ commands:
       - -i, --input <file>
       - --compatibility-date <date>
       - --summary
-      - --json
 
   - name: workers-delete
     description: Delete a Worker script
@@ -58,7 +54,6 @@ commands:
     options:
       - --force
       - --summary
-      - --json
 
   - name: workers-tail
     description: Get recent Worker logs/events
@@ -66,20 +61,17 @@ commands:
       - <name>
     options:
       - --summary
-      - --json
 
   - name: workers-subdomain
     description: Get or set Workers subdomain
     options:
       - --summary
-      - --json
 
   # Pages - Phase 2
   - name: pages-list
     description: List Pages projects
     options:
       - --summary
-      - --json
 
   - name: pages-get
     description: Get Pages project details
@@ -87,7 +79,6 @@ commands:
       - <name>
     options:
       - --summary
-      - --json
 
   - name: pages-create
     description: Create a new Pages project
@@ -96,7 +87,6 @@ commands:
     options:
       - --production-branch <branch>
       - --summary
-      - --json
 
   - name: pages-deploy
     description: Deploy to a Pages project
@@ -106,7 +96,6 @@ commands:
       - -d, --directory <dir>
       - --branch <branch>
       - --summary
-      - --json
 
   - name: pages-deployments
     description: List deployments for a Pages project
@@ -114,7 +103,6 @@ commands:
       - <name>
     options:
       - --summary
-      - --json
 
   # AI - Phase 3
   - name: ai-models
@@ -123,7 +111,6 @@ commands:
       - -s, --search <query>
       - --task <task>
       - --summary
-      - --json
 
   - name: ai-run
     description: Run an AI model
@@ -133,7 +120,6 @@ commands:
       - -p, --prompt <text>
       - --input <file>
       - --summary
-      - --json
 
 # Token configuration for secure sandbox access
 tokens:
